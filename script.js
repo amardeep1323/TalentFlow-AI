@@ -85,5 +85,53 @@ function scheduleInterview(){openModal('INTERVIEW MANAGEMENT','Schedule Intervie
 
 function initActions(){document.querySelectorAll('[data-action="add-candidate"]').forEach(b=>b.onclick=addCandidate);document.querySelectorAll('[data-action="add-job"]').forEach(b=>b.onclick=addJob);document.querySelectorAll('[data-action="schedule-interview"]').forEach(b=>b.onclick=scheduleInterview);$('modalClose').onclick=closeModal;$('modalOverlay').onclick=e=>{if(e.target===$('modalOverlay'))closeModal();};$('themeToggle').onclick=()=>{document.body.classList.toggle('dark');localStorage.setItem('talentflow_theme',document.body.classList.contains('dark')?'dark':'light')};if(localStorage.getItem('talentflow_theme')==='dark')document.body.classList.add('dark');$('notificationButton').onclick=()=>{$('notificationPanel').classList.toggle('hidden');$('notificationDot').style.display='none'};$('clearNotifications').onclick=()=>{$('notificationList').innerHTML='<p style="padding:15px;color:var(--muted);font-size:12px">No new notifications.</p>'};$('generateInsight').onclick=()=>{const total=data.candidates.length,avg=total?Math.round(data.candidates.reduce((a,c)=>a+c.score,0)/total):0;$('aiInsightContent').innerHTML=`<p class="ai-main-text"><strong>${total} candidates</strong> are currently in the talent pool with an average AI match of <strong>${avg}%</strong>. ${data.interviews.length} interviews are scheduled. Review high-match candidates first and keep interview stages moving.</p>`;showToast('AI insight generated')};$('globalSearch').oninput=e=>{const q=e.target.value.trim();if(q){navigate('candidates');$('candidateSearch').value=q;renderCandidates()}};['candidateSearch','candidateStatusFilter','candidateRoleFilter','candidateSort'].forEach(id=>$(id).addEventListener('input',renderCandidates));$('settingAI').onchange=e=>{data.settings.ai=e.target.checked;saveData()};$('settingNotifications').onchange=e=>{data.settings.notifications=e.target.checked;saveData()};$('settingCompact').onchange=e=>{data.settings.compact=e.target.checked;saveData();renderSettings()};$('resetData').onclick=()=>{if(confirm('Reset all demo recruitment data?')){data=structuredClone(demoData);saveData();renderAll();showToast('Demo data reset')}}}
 
-function boot(){initAuth();initNavigation();initActions();if(!currentUser){$('app').classList.add('hidden');$('authScreen').classList.remove('hidden')}else{$('authScreen').classList.add('hidden');$('app').classList.remove('hidden')}}
+
+const API_BASE_URL = 'http://51.21.111.176:8000';
+
+async function syncCandidatesFromAPI(){
+ try {
+  const response = await fetch(`${API_BASE_URL}/candidates`);
+  if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+  const result = await response.json();
+  let changed = false;
+
+  for (const item of (result.candidates || [])) {
+   const email = String(item.email || '').trim().toLowerCase();
+   if (!email) continue;
+
+   const existing = data.candidates.find(
+    c => String(c.email || '').trim().toLowerCase() === email
+   );
+
+   if (existing) {
+    existing.databaseId = item.id;
+    existing.fromAPI = true;
+    existing.skills = item.skills || '';
+   } else {
+    data.candidates.unshift({
+     id: 1000000 + Number(item.id),
+     databaseId: item.id,
+     fromAPI: true,
+     name: item.name || 'Unnamed Candidate',
+     email,
+     role: 'Not specified',
+     experience: 'Not specified',
+     score: 0,
+     stage: 'Applied',
+     applied: new Date().toISOString().slice(0, 10),
+     source: 'TalentFlow API',
+     skills: item.skills || ''
+    });
+   }
+   changed = true;
+  }
+
+  if (changed) saveData();
+  if (currentUser) renderAll();
+ } catch (error) {
+  console.error('Could not sync candidates from API:', error);
+ }
+}
+
+function boot(){initAuth();initNavigation();initActions();if(!currentUser){$('app').classList.add('hidden');$('authScreen').classList.remove('hidden')}else{$('authScreen').classList.add('hidden');$('app').classList.remove('hidden')};syncCandidatesFromAPI()}
 boot();
